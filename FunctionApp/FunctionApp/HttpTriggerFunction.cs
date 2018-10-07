@@ -15,7 +15,7 @@ namespace FunctionApp
     public static class HttpTriggerFunction
     {
         [FunctionName("CheckoutEndPoint")]
-        public static void Run(
+        public static async Task Run(
             [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = null)]HttpRequest req,
             [CosmosDB(databaseName: "salesdb",
             collectionName: "salescollection",
@@ -23,12 +23,12 @@ namespace FunctionApp
             CollectionThroughput = 1000,
             PartitionKey = "/sku",
             ConnectionStringSetting = "CosmosDBConnection")]
-        out dynamic outputDocument,
+            IAsyncCollector<dynamic> outputDocuments,
             ILogger log)
         {
-            string requestBody = (new StreamReader(req.Body).ReadToEndAsync()).Result;
+            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             dynamic data = JsonConvert.DeserializeObject(requestBody);
-            outputDocument = data;
+            await outputDocuments.AddAsync(data);
         }
     }
 }

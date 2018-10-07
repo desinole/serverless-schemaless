@@ -26,7 +26,8 @@ For purposes of convenience, this demo and code samples are geared to running on
 - In the function code file, changed function name attribute to CheckoutEndPoint or something else that makes sense
 - Run your code and hit up the endpoint at the url generated 
 
-###### Add Cosmos DB Http Trigger
+###### Add Http Trigger to write to Cosmos DB
+
 - Add Nuget package: Microsoft.Azure.WebJobs.Extensions.CosmosDB (latest version)
 
 - Paste the connection string for the CosmosDB emulator into your local.settings.json file
@@ -45,7 +46,7 @@ For purposes of convenience, this demo and code samples are geared to running on
 - Replace the function code body with this chunk
 ```csharp
         [FunctionName("CheckoutEndPoint")]
-        public static void Run(
+        public static async Task Run(
             [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = null)]HttpRequest req,
             [CosmosDB(databaseName: "salesdb",
             collectionName: "salescollection",
@@ -53,12 +54,12 @@ For purposes of convenience, this demo and code samples are geared to running on
             CollectionThroughput = 1000,
             PartitionKey = "/sku",
             ConnectionStringSetting = "CosmosDBConnection")]
-        out dynamic outputDocument,
+        IAsyncCollector<dynamic> outputDocuments,
             ILogger log)
         {
-            string requestBody = (new StreamReader(req.Body).ReadToEndAsync()).Result;
+            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             dynamic data = JsonConvert.DeserializeObject(requestBody);
-            outputDocument = data;
+            await outputDocuments.AddAsync(data);
         }
 ```
 
@@ -67,5 +68,39 @@ For purposes of convenience, this demo and code samples are geared to running on
 - When you run this sample, the database and collection will autocreate if they don't exist. 
 
 - Copy-paste the json data in the file in your favorite REST client body and issue a POST to the CheckoutEndPoint. You will notice that the data gets stored in the "salescollection" data store - verify with local emulator Data Explorer.
+
+###### Add Cosmos DB Triggered Function to determine shipping
+- Add a function called "CalculateTaxCosmosFunction" and select CosmosDB as the trigger.
+
+- Add the correct database name, collection name and connection string name
+
+- Replace the code inside the function body as follows:
+
+```csharp
+        [FunctionName("CalculateTaxCosmosFunction")]
+        public static void Run([CosmosDBTrigger(
+            databaseName: "salesdb",
+            collectionName: "salescollection",
+            ConnectionStringSetting = "CosmosDBConnection",
+            LeaseCollectionName = "leases",
+            CreateLeaseCollectionIfNotExists = true,
+            LeasesCollectionThroughput = 1000)]IReadOnlyList<Document> documents,
+            ILogger log)
+        {
+            if (documents != null && documents.Count > 0)
+            {
+                foreach (var document in documents)
+                {
+                    if (((dynamic)document).requires_shipping)
+                        log.LogWarning("Invoked shipping function");
+                    else
+                        log.LogWarning("No shipping!!!!");
+                }
+            }
+        }
+
+```
+
+- In the above code sample: the CosmosDB trigger is invoked when data enters the data collection. Since multiple records could be inserted at once we read them in a list and iterate throught them, 
 
 
